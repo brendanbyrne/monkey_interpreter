@@ -1,7 +1,7 @@
 //! Powers the eval portion of the REPL cycle
 
 mod environment;
-use environment::{Environment, Object, FALSE, NOOP, NULL, TRUE};
+use environment::{Env, Object, FALSE, NOOP, NULL, TRUE};
 
 mod error;
 use error::{Error, Result};
@@ -10,14 +10,14 @@ use crate::parser::{ast, Program};
 
 /// Contains the state of the execuated program
 pub struct Evaluator {
-    env: Box<Environment>,
+    env: Box<dyn Env>,
 }
 
 impl Evaluator {
     /// Returns an initialize Evaluator
     pub fn new() -> Self {
         Evaluator {
-            env: Box::new(Environment::new()),
+            env: Box::new(environment::Root::new()),
         }
     }
 
@@ -92,7 +92,14 @@ impl Evaluator {
                 *body,
                 self.env.clone(),
             )),
-            _ => Err(Error::UnhandledExpression(expression)),
+            ast::Expression::Call(id, args) => {
+                let func = self.expression(*id)?;
+                let mut args_obj: Vec<Object> = Vec::with_capacity(args.len());
+                for a in args {
+                    args_obj.push(self.expression(*a)?);
+                }
+                Ok(NOOP)
+            }
         }
     }
 
@@ -178,6 +185,12 @@ mod tests {
             input: &'a str,
             expected_obj: Object,
         }
+
+        use ast::{
+            Expression::{Identifier, Infix, Int},
+            InfixOperator::Plus,
+            Statement::{Block, Expression},
+        };
 
         let test_cases = vec![
             TestCase {
@@ -336,22 +349,39 @@ mod tests {
                 input: "fn(x) { x + 2; };",
                 expected_obj: Object::Function(
                     vec!["x".to_owned()],
-                    ast::Statement::Block(vec![Box::new(ast::Statement::Expression(
-                        ast::Expression::Infix(
-                            ast::InfixOperator::Plus,
-                            Box::new(ast::Expression::Identifier("x".to_owned())),
-                            Box::new(ast::Expression::Int(2)),
-                        ),
-                    ))]),
-                    Box::new(Environment::new()),
+                    Block(vec![Box::new(Expression(Infix(
+                        Plus,
+                        Box::new(Identifier("x".to_owned())),
+                        Box::new(Int(2)),
+                    )))]),
+                    Box::new(environment::Root::new()),
                 ),
+            },
+            TestCase {
+                input: "let identity = fn(x) { x; }; identity(5);",
+                expected_obj: Object::Int(5),
+            },
+            TestCase {
+                input: "let identity = fn(x) { return x; }; identity(5);",
+                expected_obj: Object::Int(5),
+            },
+            TestCase {
+                input: "let double = fn(x) {  x * 2; }; double(5);",
+                expected_obj: Object::Int(10),
+            },
+            TestCase {
+                input: "let add = fn(x, y) {  x + y; }; add(5, 5);",
+                expected_obj: Object::Int(10),
+            },
+            TestCase {
+                input: "let add = fn(x, y) {  x + y; }; add(5 + 5, add(5, 5)));",
+                expected_obj: Object::Int(20),
             },
         ];
 
         for test_case in test_cases {
             let program = parse_program(test_case.input).unwrap();
             let mut evaluator = Evaluator::new();
-
             let obj = evaluator.eval(program).unwrap();
             assert_eq!(obj, test_case.expected_obj);
         }

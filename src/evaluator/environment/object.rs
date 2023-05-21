@@ -2,8 +2,17 @@
 
 use std::fmt;
 
-use crate::evaluator::Environment; // this feel a little wrong
 use crate::parser::ast;
+
+use crate::evaluator::Result;
+
+/// A collection of id -> object data
+///
+/// This is used to access where the data actually lives
+pub trait Env {
+    fn get(&self, id: String) -> Result<Object>;
+    fn set(&mut self, id: String, obj: Object);
+}
 
 /// These are the types of objects that can be represented in the object system
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -16,7 +25,7 @@ pub enum Object {
     Null,
     Int(i128),
     Bool(bool),
-    Function(Vec<String>, ast::Statement, Box<Environment>),
+    Function(Vec<String>, ast::Statement, Box<dyn Env>),
 }
 
 // QUESTION: Does this actually do what I think it does?
